@@ -182,3 +182,57 @@ def test_invalid_horizon(inputs: tuple[dict, dict], days: int) -> None:
     history, params = inputs
     with pytest.raises(ValueError, match="positive"):
         forecast_demand(history, "OIL-001", days, params)
+
+
+def test_unknown_sku_is_rejected(inputs: tuple[dict, dict]) -> None:
+    history, params = inputs
+
+    with pytest.raises(KeyError, match="Unknown SKU"):
+        forecast_demand(history, "UNKNOWN", 30, params)
+
+
+def test_missing_sku_history_is_rejected(inputs: tuple[dict, dict]) -> None:
+    history, params = inputs
+    incomplete = copy.deepcopy(history)
+    del incomplete["weekly_consumption"]["OIL-001"]
+
+    with pytest.raises(KeyError, match="Missing history"):
+        forecast_demand(incomplete, "OIL-001", 30, params)
+
+
+@pytest.mark.parametrize("values", [[], "not-a-list"])
+def test_invalid_weekly_series_is_rejected(
+    inputs: tuple[dict, dict],
+    values: object,
+) -> None:
+    history, params = inputs
+    invalid = copy.deepcopy(history)
+    invalid["weekly_consumption"]["OIL-001"] = values
+
+    with pytest.raises(ValueError, match="non-empty list"):
+        forecast_demand(invalid, "OIL-001", 30, params)
+
+
+def test_series_without_numeric_values_is_rejected(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+    invalid = copy.deepcopy(history)
+    invalid["weekly_consumption"]["OIL-001"] = [None] * 12
+
+    with pytest.raises(ValueError, match="no numeric observations"):
+        forecast_demand(invalid, "OIL-001", 30, params)
+
+
+def test_invalid_demand_multiplier_is_rejected(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+
+    with pytest.raises(ValueError, match="demand_multiplier"):
+        forecast_demand(
+            history,
+            "OIL-001",
+            30,
+            {**params, "demand_multiplier": 0},
+        )

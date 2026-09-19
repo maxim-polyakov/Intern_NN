@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from inventory_ai.data import load_catalog, load_dataset
@@ -122,3 +124,72 @@ def test_numeric_purchase_answer_is_grounded_in_forecast(context: dict) -> None:
     assert f"{forecast['recommended_qty']:g}" in answer
     assert f"{forecast['estimated_cost']:.2f}" in answer
     assert f"{forecast['avg_daily_consumption']:.2f}" in answer
+
+
+def test_year_period_and_million_budget_are_parsed(context: dict) -> None:
+    parsed, _, answer = answer_question(
+        "Посчитай закупку скраба на год при лимите 1 млн",
+        context,
+    )
+
+    assert parsed["period_days"] == 365
+    assert parsed["budget_limit"] == 1_000_000
+    assert "укладывается в лимит" in answer
+
+
+@pytest.mark.parametrize(
+    ("question", "missing"),
+    [
+        ("Посчитай закупку на месяц", "товар"),
+        ("Посчитай закупку скраба", "период"),
+    ],
+)
+def test_purchase_requires_sku_and_period(
+    context: dict,
+    question: str,
+    missing: str,
+) -> None:
+    parsed, _, answer = answer_question(question, context)
+
+    assert parsed["intent"] == "unknown"
+    assert missing in answer
+
+
+def test_reorder_list_can_report_no_order(context: dict) -> None:
+    ample = copy.deepcopy(context)
+    for sku in ample["history"]["current_stock"]:
+        ample["history"]["current_stock"][sku] = 1_000_000
+
+    parsed, _, answer = answer_question(
+        "Что нужно заказать в ближайшие 14 дней?",
+        ample,
+    )
+
+    assert parsed["intent"] == "reorder_list"
+    assert "заказ не требуется" in answer
+
+
+def test_deficit_risk_with_period_is_calculated(context: dict) -> None:
+    parsed, _, answer = answer_question(
+        "Что закончится за 30 дней?",
+        context,
+    )
+
+    assert parsed["intent"] == "deficit_risk"
+    assert "Риск дефицита на 30 дн." in answer
+
+
+def test_demand_growth_scenario_is_applied(context: dict) -> None:
+    parsed, _, answer = answer_question(
+        "Сколько скраба закупить за 30 дней, если загрузка вырастет на 20%?",
+        context,
+    )
+    baseline = forecast_demand(
+        context["history"],
+        "SCRB-020",
+        30,
+        {"catalog": context["catalog"]},
+    )
+
+    assert parsed["intent"] == "forecast_purchase"
+    assert f"{baseline['avg_daily_consumption']:.2f}" not in answer

@@ -38,7 +38,7 @@ branch = true
 source = ["inventory_ai", "solution"]
 
 [tool.coverage.report]
-fail_under = 90
+fail_under = 97
 show_missing = true
 
 [tool.ruff]
