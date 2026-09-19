@@ -11,6 +11,13 @@ from inventory_ai.config import (
     DAYS_IN_QUARTER,
     DAYS_IN_YEAR,
     INTENT_AMBIGUITY_MARGIN,
+    QA_AMBIGUOUS_SKU_CONFIDENCE,
+    QA_INTENT_BASE_CONFIDENCE,
+    QA_INTENT_MATCH_WEIGHT,
+    QA_MAX_CONFIDENCE,
+    QA_MISSING_PARAMETER_CONFIDENCE,
+    QA_UNKNOWN_CONFIDENCE,
+    SCENARIO_DEMAND_INCREASE,
 )
 from inventory_ai.forecasting import forecast_demand
 
@@ -149,7 +156,7 @@ def answer_question(
         return _clarification(
             parsed,
             "Уточните товар: базовое масло OIL-001 или ароматическое OIL-002?",
-            0.45,
+            QA_AMBIGUOUS_SKU_CONFIDENCE,
         )
 
     scores = _intent_scores(question)
@@ -161,16 +168,21 @@ def answer_question(
             parsed,
             "Не удалось однозначно определить складской запрос. Уточните товар, "
             "период и требуемый расчёт.",
-            0.2,
+            QA_UNKNOWN_CONFIDENCE,
         )
     parsed["intent"] = best_intent
-    confidence = min(0.98, 0.72 + 0.08 * best_score)
+    confidence = min(
+        QA_MAX_CONFIDENCE,
+        QA_INTENT_BASE_CONFIDENCE + QA_INTENT_MATCH_WEIGHT * best_score,
+    )
 
     if best_intent == "forecast_purchase":
         if sku is None or period is None:
             missing = "товар" if sku is None else "период"
             return _clarification(
-                parsed, f"Уточните {missing} для расчёта закупки.", 0.5
+                parsed,
+                f"Уточните {missing} для расчёта закупки.",
+                QA_MISSING_PARAMETER_CONFIDENCE,
             )
         result = forecast_demand(
             context["history"],
@@ -178,7 +190,9 @@ def answer_question(
             period,
             {
                 "catalog": context.get("catalog"),
-                "demand_multiplier": 1.2 if "20%" in question else 1.0,
+                "demand_multiplier": (
+                    SCENARIO_DEMAND_INCREASE if "20%" in question else 1.0
+                ),
             },
         )
         over_budget = (
@@ -203,7 +217,9 @@ def answer_question(
     if best_intent in {"reorder_list", "budget"}:
         if period is None:
             return _clarification(
-                parsed, "Уточните период расчёта списка закупок.", 0.5
+                parsed,
+                "Уточните период расчёта списка закупок.",
+                QA_MISSING_PARAMETER_CONFIDENCE,
             )
         forecasts = _all_forecasts(context, period)
         orders = {
@@ -227,7 +243,11 @@ def answer_question(
 
     if best_intent == "deficit_risk":
         if period is None:
-            return _clarification(parsed, "Уточните период оценки риска дефицита.", 0.5)
+            return _clarification(
+                parsed,
+                "Уточните период оценки риска дефицита.",
+                QA_MISSING_PARAMETER_CONFIDENCE,
+            )
         forecasts = _all_forecasts(context, period)
         risky = [
             item_sku
@@ -256,4 +276,4 @@ def answer_question(
             "В контексте есть только текущая цена, но нет истории цен; "
             "динамику рассчитать нельзя.",
         )
-    return _clarification(parsed, "Запрос не поддерживается.", 0.2)
+    return _clarification(parsed, "Запрос не поддерживается.", QA_UNKNOWN_CONFIDENCE)

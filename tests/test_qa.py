@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from inventory_ai.data import load_catalog, load_dataset
-from solution import answer_question
+from solution import answer_question, forecast_demand
 
 
 @pytest.fixture
@@ -81,3 +81,44 @@ def test_all_questions_return_contract(context: dict) -> None:
         }
         assert 0 <= confidence <= 1
         assert answer
+
+
+def test_all_assignment_questions_have_expected_intents(context: dict) -> None:
+    expected = [
+        "unknown",
+        "reorder_list",
+        "budget",
+        "unknown",
+        "expiry_risk",
+        "price_dynamics",
+        "unknown",
+        "forecast_purchase",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+        "unknown",
+    ]
+    actual = [
+        answer_question(question, context)[0]["intent"]
+        for question in load_dataset()["questions"]
+    ]
+
+    assert actual == expected
+
+
+def test_numeric_purchase_answer_is_grounded_in_forecast(context: dict) -> None:
+    question = "Посчитай закупку скраба на полгода при лимите 200 тысяч"
+    _, _, answer = answer_question(question, context)
+    forecast = forecast_demand(
+        context["history"],
+        "SCRB-020",
+        180,
+        {"catalog": context["catalog"]},
+    )
+
+    assert f"{forecast['recommended_qty']:g}" in answer
+    assert f"{forecast['estimated_cost']:.2f}" in answer
+    assert f"{forecast['avg_daily_consumption']:.2f}" in answer

@@ -15,6 +15,7 @@ from inventory_ai.config import (
     CONFIDENCE_THRESHOLD,
     CONFIDENCE_VOLATILITY_WEIGHT,
     EWMA_ALPHA,
+    LEVEL_SHIFT_MIN_SHARE,
     LEVEL_SHIFT_RATIO,
     LEVEL_SHIFT_WEEKS,
     MAX_CONFIDENCE,
@@ -76,9 +77,12 @@ def _detect_level_shift(values: list[float]) -> bool:
     split = len(values) - LEVEL_SHIFT_WEEKS
     if split < MIN_LEVEL_BASELINE_WEEKS:
         return False
-    baseline = statistics.mean(values[:split])
-    recent = statistics.mean(values[split:])
-    return baseline > 0 and recent / baseline >= LEVEL_SHIFT_RATIO
+    baseline = statistics.median(values[:split])
+    recent = values[split:]
+    if baseline <= 0 or statistics.median(recent) / baseline < LEVEL_SHIFT_RATIO:
+        return False
+    shifted_points = sum(value / baseline >= LEVEL_SHIFT_RATIO for value in recent)
+    return shifted_points / len(recent) >= LEVEL_SHIFT_MIN_SHARE
 
 
 def _forecast_weekly(values: list[float], level_shift: bool) -> float:
@@ -146,10 +150,16 @@ def forecast_demand(
     )
     estimated_cost = recommended * float(product["price"])
 
-    available = current_stock + incoming_qty
-    days_to_stockout = math.floor(available / daily_rate) if daily_rate else 0
     as_of = date.fromisoformat(history["as_of"])
-    stockout_date = (as_of + timedelta(days=days_to_stockout)).isoformat()
+    if daily_rate > 0:
+        # The dataset has no arrival date, so stock in transit cannot safely
+        # postpone the estimated stockout date.
+        days_to_stockout = math.floor(max(current_stock, 0.0) / daily_rate)
+        stockout_date: str | None = (
+            as_of + timedelta(days=days_to_stockout)
+        ).isoformat()
+    else:
+        stockout_date = None
 
     mean = statistics.mean(cleaned)
     volatility = statistics.pstdev(cleaned) / mean if mean else 1.0
@@ -184,7 +194,8 @@ def forecast_demand(
         f"в пути {incoming_qty:.2f}. Потребность {raw_order:.2f} округлена "
         f"до упаковки {product['pack_size']} и min партии "
         f"{product['min_order_qty']}: {recommended:g}. Confidence "
-        f"{confidence:.2f}: {status}."
+        f"{confidence:.2f}: {status}. Дата исчерпания рассчитана только по "
+        "текущему остатку: дата поступления объёма в пути неизвестна."
     )
     return {
         "avg_daily_consumption": _round(daily_rate),

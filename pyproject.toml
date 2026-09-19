@@ -12,7 +12,9 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = [
+  "build>=1.2",
   "pytest>=8.0",
+  "pytest-cov>=5.0",
   "ruff>=0.6",
 ]
 
@@ -22,10 +24,22 @@ inventory-ai = "inventory_ai.cli:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/inventory_ai"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"catalog.json" = "inventory_ai/resources/catalog.json"
+"dataset.json" = "inventory_ai/resources/dataset.json"
+
 [tool.pytest.ini_options]
 addopts = "-q"
 pythonpath = ["src", "."]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["inventory_ai", "solution"]
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
 
 [tool.ruff]
 target-version = "py311"

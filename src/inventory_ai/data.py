@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +16,19 @@ def load_json(path: str | Path) -> Any:
         return json.load(source)
 
 
+def _load_bundled_json(filename: str) -> Any:
+    """Load root data in a checkout or packaged resources from an installed wheel."""
+    checkout_path = PROJECT_ROOT / filename
+    if checkout_path.is_file():
+        return load_json(checkout_path)
+    resource = files("inventory_ai").joinpath("resources", filename)
+    with resource.open(encoding="utf-8") as source:
+        return json.load(source)
+
+
 def load_catalog(path: str | Path | None = None) -> list[dict[str, Any]]:
     """Load the product catalog."""
-    result = load_json(path or PROJECT_ROOT / "catalog.json")
+    result = load_json(path) if path is not None else _load_bundled_json("catalog.json")
     if not isinstance(result, list):
         raise ValueError("catalog.json must contain a list")
     return result
@@ -25,7 +36,7 @@ def load_catalog(path: str | Path | None = None) -> list[dict[str, Any]]:
 
 def load_dataset(path: str | Path | None = None) -> dict[str, Any]:
     """Load the test dataset."""
-    result = load_json(path or PROJECT_ROOT / "dataset.json")
+    result = load_json(path) if path is not None else _load_bundled_json("dataset.json")
     if not isinstance(result, dict):
         raise ValueError("dataset.json must contain an object")
     return result

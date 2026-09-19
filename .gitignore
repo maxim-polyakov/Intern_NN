@@ -1,3 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+.venv/
+build/
+dist/
+*.egg-info/
 /__pycache__
 /src/inventory_ai/__pycache__
 /tests/__pycache__

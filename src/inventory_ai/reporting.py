@@ -9,6 +9,108 @@ from inventory_ai.forecasting import forecast_demand
 from inventory_ai.normalization import normalize_movement
 from inventory_ai.qa import answer_question
 
+_MOVEMENT_FIELDS = (
+    "date",
+    "sku",
+    "location",
+    "operation",
+    "qty",
+    "unit",
+    "batch",
+    "doc_no",
+)
+
+_EXPECTED_MOVEMENTS = {
+    "M1": {
+        "date": "2026-03-05",
+        "sku": "OIL-001",
+        "location": "MS-01",
+        "operation": "receipt",
+        "qty": 10.0,
+        "unit": "л",
+        "batch": None,
+        "doc_no": "НК-345",
+    },
+    "M2": {
+        "date": "2026-03-01",
+        "sku": "OIL-001",
+        "location": "MS-01",
+        "operation": "consume",
+        "qty": 0.45,
+        "unit": "л",
+        "batch": "B-OIL-001-012",
+        "doc_no": None,
+    },
+    "M3": {
+        "date": "2026-06-03",
+        "sku": "SCRB-020",
+        "location": "Сочи",
+        "operation": "writeoff",
+        "qty": 1.2,
+        "unit": "кг",
+        "batch": None,
+        "doc_no": None,
+    },
+    "M4": {
+        "date": "2026-03-07",
+        "sku": "WRAP-030",
+        "location": "MS-02",
+        "operation": "consume",
+        "qty": 3.5,
+        "unit": "кг",
+        "batch": "B-WRAP-030-004",
+        "doc_no": None,
+    },
+    "M5": {
+        "date": "2026-03-12",
+        "sku": "OIL-002",
+        "location": None,
+        "operation": "return",
+        "qty": 2.0,
+        "unit": "л",
+        "batch": None,
+        "doc_no": None,
+    },
+    "M6": {
+        "date": "2026-03-08",
+        "sku": "CONS-051",
+        "location": "MS-01",
+        "operation": "consume",
+        "qty": 48.0,
+        "unit": "пар",
+        "batch": None,
+        "doc_no": None,
+    },
+    "M7": {
+        "date": "2026-03-15",
+        "sku": "CONS-052",
+        "location": "MS-02",
+        "operation": "correction",
+        "qty": -120.0,
+        "unit": "шт",
+        "batch": None,
+        "doc_no": None,
+    },
+    "M8": {
+        "date": None,
+        "sku": "CONS-051",
+        "location": "Красная Поляна",
+        "operation": "receipt",
+        "qty": 200.0,
+        "unit": "пар",
+        "batch": None,
+        "doc_no": None,
+    },
+}
+
+
+def _movement_summary(row: dict[str, Any]) -> str:
+    """Render all normalized fields in a compact, auditable form."""
+    return "; ".join(
+        f"{field}={'—' if row.get(field) is None else row[field]}"
+        for field in _MOVEMENT_FIELDS
+    )
+
 
 def run_pipeline() -> dict[str, Any]:
     """Execute normalization, six forecasts, and all fifteen QA examples."""
@@ -74,6 +176,30 @@ def render_markdown(results: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
+            "### Проверка M1–M8",
+            "",
+            "| ID | Ожидаемое | Получено | Статус | Не извлечено |",
+            "|---|---|---|---|---|",
+        ]
+    )
+    for row in results["normalization"]:
+        expected = _EXPECTED_MOVEMENTS[row["id"]]
+        mismatches = [
+            field for field in _MOVEMENT_FIELDS if expected[field] != row.get(field)
+        ]
+        missing = [
+            field
+            for field in mismatches
+            if expected[field] is not None and row.get(field) is None
+        ]
+        lines.append(
+            f"| {row['id']} | {_movement_summary(expected)} | "
+            f"{_movement_summary(row)} | {'OK' if not mismatches else 'Ошибка'} | "
+            f"{', '.join(missing) or '—'} |"
+        )
+    lines.extend(
+        [
+            "",
             "Все доступные поля M1–M8 извлечены. Отсутствующие в исходной строке "
             "поля оставлены `None`. `тапочки одноразовые` сопоставляются с CONS-051; "
             "для неоднозначного общего названия `масло` SKU не выбирается.",
@@ -135,8 +261,8 @@ def render_markdown(results: dict[str, Any]) -> str:
             "",
             "- Данные не содержат распределения по филиалам, дат прихода поставок, "
             "сроков годности и истории цен; такие ответы не рассчитываются.",
-            "- В `stockout_date` доступным считается текущий остаток плюс весь объём "
-            "в пути, поскольку дата прихода в тестовых данных отсутствует.",
+            "- `stockout_date` рассчитывается только по текущему остатку: объём в "
+            "пути не переносит дату исчерпания, поскольку дата прихода неизвестна.",
             "- Сезонность на 12 недель надёжно оценить нельзя; используется локальный "
             "уровень спроса.",
             "- Суммы округляются только для вывода; закупка считается из "

@@ -6,7 +6,7 @@
 
 ## Установка и запуск
 
-Требуется Python 3.11+.
+Требуется Python 3.11+. Полный набор проверок подтверждён на Python 3.11.9.
 
 ```bash
 python -m venv .venv
@@ -19,6 +19,8 @@ python -m pip install -e ".[dev]"
 
 ```bash
 inventory-ai --results RESULTS.md
+# Резервный вариант, если каталог Scripts ещё не попал в PATH:
+python -m inventory_ai.cli --results RESULTS.md
 ```
 
 Машиночитаемый вывод:
@@ -31,8 +33,15 @@ inventory-ai --json
 
 ```bash
 pytest
+pytest --cov=inventory_ai --cov=solution --cov-report=term-missing
 ruff check .
 ruff format --check .
+```
+
+Проверка сборки устанавливаемого wheel:
+
+```bash
+python -m build --wheel
 ```
 
 Публичные функции доступны из `solution.py`:

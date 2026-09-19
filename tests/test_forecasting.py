@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import date, timedelta
 
 import pytest
 
@@ -70,6 +71,110 @@ def test_missing_week_is_handled(inputs: tuple[dict, dict]) -> None:
     result = forecast_demand(history, "WRAP-030", 30, params)
     assert result["forecast_demand"] > 0
     assert "восстановлено пропусков: 1" in result["explanation"]
+
+
+def test_stockout_date_is_conservative_when_arrival_date_is_unknown(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+    with_incoming = copy.deepcopy(history)
+    without_incoming = copy.deepcopy(history)
+    with_incoming["incoming_qty"]["OIL-001"] = 10_000
+    without_incoming["incoming_qty"]["OIL-001"] = 0
+
+    first = forecast_demand(with_incoming, "OIL-001", 30, params)
+    second = forecast_demand(without_incoming, "OIL-001", 30, params)
+
+    assert first["stockout_date"] == second["stockout_date"]
+    expected_days = int(
+        history["current_stock"]["OIL-001"] / first["avg_daily_consumption"]
+    )
+    expected = date.fromisoformat(history["as_of"]) + timedelta(days=expected_days)
+    assert first["stockout_date"] == expected.isoformat()
+
+
+def test_zero_demand_has_no_stockout_date(inputs: tuple[dict, dict]) -> None:
+    history, params = inputs
+    zero = copy.deepcopy(history)
+    zero["weekly_consumption"]["OIL-001"] = [0.0] * 12
+
+    result = forecast_demand(zero, "OIL-001", 30, params)
+
+    assert result["avg_daily_consumption"] == 0
+    assert result["stockout_date"] is None
+
+
+def test_confidence_falls_for_short_and_volatile_history(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+    stable = copy.deepcopy(history)
+    short = copy.deepcopy(history)
+    volatile = copy.deepcopy(history)
+    stable["weekly_consumption"]["OIL-001"] = [10.0] * 12
+    short["weekly_consumption"]["OIL-001"] = [10.0] * 3
+    volatile["weekly_consumption"]["OIL-001"] = [1.0, 20.0] * 6
+
+    stable_confidence = forecast_demand(stable, "OIL-001", 30, params)["confidence"]
+    short_confidence = forecast_demand(short, "OIL-001", 30, params)["confidence"]
+    volatile_confidence = forecast_demand(volatile, "OIL-001", 30, params)["confidence"]
+
+    assert short_confidence < stable_confidence
+    assert volatile_confidence < stable_confidence
+
+
+def test_isolated_recent_outlier_is_not_a_level_shift(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+    outlier = copy.deepcopy(history)
+    outlier["weekly_consumption"]["OIL-001"] = [
+        9,
+        10,
+        11,
+        10,
+        9,
+        11,
+        10,
+        9,
+        10,
+        11,
+        10,
+        100,
+    ]
+
+    result = forecast_demand(outlier, "OIL-001", 30, params)
+
+    assert "экспоненциальное сглаживание" in result["explanation"]
+    assert result["avg_daily_consumption"] < 3
+
+
+def test_small_positive_need_respects_minimum_order(
+    inputs: tuple[dict, dict],
+) -> None:
+    history, params = inputs
+    near_threshold = copy.deepcopy(history)
+    initial = forecast_demand(near_threshold, "OIL-001", 30, params)
+    near_threshold["current_stock"]["OIL-001"] = (
+        initial["forecast_demand"]
+        + initial["safety_stock"]
+        - near_threshold["incoming_qty"]["OIL-001"]
+        - 0.1
+    )
+
+    result = forecast_demand(near_threshold, "OIL-001", 30, params)
+
+    assert result["recommended_qty"] == 10
+
+
+def test_estimated_cost_uses_catalog_price(inputs: tuple[dict, dict]) -> None:
+    history, params = inputs
+    result = forecast_demand(history, "SCRB-020", 90, params)
+    price = next(
+        item["price"] for item in params["catalog"] if item["sku"] == "SCRB-020"
+    )
+
+    assert result["estimated_cost"] == pytest.approx(result["recommended_qty"] * price)
 
 
 @pytest.mark.parametrize("days", [0, -1])
