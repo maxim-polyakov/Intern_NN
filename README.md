@@ -18,6 +18,7 @@ python -m pip install -e ".[dev]"
 Запуск полного пайплайна и обновление отчёта:
 
 ```bash
+python main.py --results RESULTS.md
 inventory-ai --results RESULTS.md
 # Резервный вариант, если каталог Scripts ещё не попал в PATH:
 python -m inventory_ai.cli --results RESULTS.md
